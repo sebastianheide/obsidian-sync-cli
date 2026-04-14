@@ -1,0 +1,3 @@
+[submodule "obsidian-livesync"]
+	path = obsidian-livesync
+	url = https://github.com/vrtmrz/obsidian-livesync.git

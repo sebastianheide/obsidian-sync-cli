@@ -1,0 +1,11 @@
+{
+  "name": "obsidian-agent-sync",
+  "version": "1.0.0",
+  "description": "Headless Obsidian LiveSync bridge — background watcher + CLI tools for AI agents",
+  "scripts": {
+    "install:cli": "cd obsidian-livesync && npm install && cd src/apps/cli && npm run build",
+    "watch": "node scripts/livesync-watch.js",
+    "pull": "bash scripts/livesync-pull.sh",
+    "push": "bash scripts/livesync-push.sh"
+  }
+}
