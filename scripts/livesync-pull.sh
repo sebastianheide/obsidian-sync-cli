@@ -10,7 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI="node $SCRIPT_DIR/../obsidian-livesync/src/apps/cli/dist/index.cjs"
 VAULT="${LIVESYNC_VAULT_PATH:?Error: LIVESYNC_VAULT_PATH is not set}"
-LOCK_FILE="/tmp/livesync-pull-$(echo "$VAULT" | md5).lock"
+LOCK_FILE="/tmp/livesync-pull-$(echo "$VAULT" | md5sum | cut -d' ' -f1).lock"
 
 log() { echo "[livesync-pull] $(date -Iseconds) $*" >&2; }
 
