@@ -1,3 +1,20 @@
+diff --git a/src/apps/cli/adapters/NodeFileSystemAdapter.ts b/src/apps/cli/adapters/NodeFileSystemAdapter.ts
+index b90ad73..cfe66be 100644
+--- a/src/apps/cli/adapters/NodeFileSystemAdapter.ts
++++ b/src/apps/cli/adapters/NodeFileSystemAdapter.ts
+@@ -126,6 +126,12 @@ export class NodeFileSystemAdapter implements IFileSystemAdapter<NodeFile, NodeF
+             const entries = await fs.readdir(fullPath, { withFileTypes: true });
+ 
+             for (const entry of entries) {
++                // Skip hidden/dot directories (e.g. .livesync/) — they contain
++                // internal LevelDB files that must never be synced and whose
++                // contents change at any time (compaction races → ENOENT).
++                if (entry.isDirectory() && entry.name.startsWith(".")) {
++                    continue;
++                }
+                 const entryRelativePath = path.join(relativePath, entry.name).replace(/\\/g, "/");
+ 
+                 if (entry.isDirectory()) {
 diff --git a/src/apps/cli/services/NodeServiceHub.ts b/src/apps/cli/services/NodeServiceHub.ts
 index 9815f42..c01f01a 100644
 --- a/src/apps/cli/services/NodeServiceHub.ts
