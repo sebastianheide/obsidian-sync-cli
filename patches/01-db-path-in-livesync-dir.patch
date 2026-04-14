@@ -4,7 +4,7 @@ index b90ad73..cfe66be 100644
 +++ b/src/apps/cli/adapters/NodeFileSystemAdapter.ts
 @@ -126,6 +126,12 @@ export class NodeFileSystemAdapter implements IFileSystemAdapter<NodeFile, NodeF
              const entries = await fs.readdir(fullPath, { withFileTypes: true });
-
+ 
              for (const entry of entries) {
 +                // Skip hidden/dot directories (e.g. .livesync/) — they contain
 +                // internal LevelDB files that must never be synced and whose
@@ -13,14 +13,14 @@ index b90ad73..cfe66be 100644
 +                    continue;
 +                }
                  const entryRelativePath = path.join(relativePath, entry.name).replace(/\\/g, "/");
-
+ 
                  if (entry.isDirectory()) {
 diff --git a/src/apps/cli/commands/runCommand.ts b/src/apps/cli/commands/runCommand.ts
-index 12a315b..ac8da59 100644
+index 12a315b..bd35efa 100644
 --- a/src/apps/cli/commands/runCommand.ts
 +++ b/src/apps/cli/commands/runCommand.ts
 @@ -20,7 +20,7 @@ export async function runCommand(options: CLIOptions, context: CLICommandContext
-
+ 
      if (options.command === "sync") {
          console.log("[Command] sync");
 -        const result = await core.services.replication.replicate(true);
@@ -28,10 +28,24 @@ index 12a315b..ac8da59 100644
          if (!result) {
              // TODO: Standardise the logic for identifying the cause of replication
              // failure so that every reason (locked DB, version mismatch, network
-@@ -36,6 +36,12 @@ export async function runCommand(options: CLIOptions, context: CLICommandContext
+@@ -36,6 +36,26 @@ export async function runCommand(options: CLIOptions, context: CLICommandContext
          return !!result;
      }
-
+ 
++    if (options.command === "connection-info") {
++        // Output decrypted CouchDB connection details as JSON.
++        // Used by livesync-watch.js to avoid re-implementing settings decryption.
++        const s = core.services.setting.currentSettings();
++        const info = {
++            couchDB_URI: s.couchDB_URI,
++            couchDB_USER: s.couchDB_USER,
++            couchDB_PASSWORD: s.couchDB_PASSWORD,
++            couchDB_DBNAME: s.couchDB_DBNAME,
++        };
++        process.stdout.write(JSON.stringify(info) + "\n");
++        return true;
++    }
++
 +    if (options.command === "sync-push") {
 +        console.log("[Command] sync-push");
 +        const result = await core.services.replication.replicateAllToRemote(true);
@@ -42,22 +56,24 @@ index 12a315b..ac8da59 100644
          if (options.commandArgs.length < 1) {
              throw new Error("p2p-peers requires one argument: <timeout>");
 diff --git a/src/apps/cli/commands/types.ts b/src/apps/cli/commands/types.ts
-index 01ea118..61f53bf 100644
+index 01ea118..3e9757d 100644
 --- a/src/apps/cli/commands/types.ts
 +++ b/src/apps/cli/commands/types.ts
-@@ -4,6 +4,7 @@ import { ServiceContext } from "@lib/services/base/ServiceBase";
+@@ -4,6 +4,8 @@ import { ServiceContext } from "@lib/services/base/ServiceBase";
  export type CLICommand =
      | "daemon"
      | "sync"
 +    | "sync-push"
++    | "connection-info"
      | "p2p-peers"
      | "p2p-sync"
      | "p2p-host"
-@@ -39,6 +40,7 @@ export interface CLICommandContext {
-
+@@ -39,6 +41,8 @@ export interface CLICommandContext {
+ 
  export const VALID_COMMANDS = new Set([
      "sync",
 +    "sync-push",
++    "connection-info",
      "p2p-peers",
      "p2p-sync",
      "p2p-host",
@@ -75,7 +91,7 @@ index ecd8afa..10c8e68 100644
 -        console.error(`[Info] Replication result received, but not processed automatically in CLI mode.`);
          return await Promise.resolve(true);
      }, -100);
-
+ 
 diff --git a/src/apps/cli/services/NodeServiceHub.ts b/src/apps/cli/services/NodeServiceHub.ts
 index 9815f42..c01f01a 100644
 --- a/src/apps/cli/services/NodeServiceHub.ts

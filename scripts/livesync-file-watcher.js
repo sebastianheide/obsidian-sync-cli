@@ -139,6 +139,10 @@ function toVaultRel(absPath) {
     return path.relative(VAULT, absPath);
 }
 
+// Keep the Node.js event loop alive even if the platform's fs.watch
+// implementation does not hold a ref (observed on some Linux kernels).
+const _keepAlive = setInterval(() => {}, 1 << 30);
+
 watcher
     .on("add", (absPath) => {
         const rel = toVaultRel(absPath);
