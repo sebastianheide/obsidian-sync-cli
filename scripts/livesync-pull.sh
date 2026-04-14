@@ -28,6 +28,17 @@ fi
 echo "$$" > "$LOCK_FILE"
 trap 'rm -f "$LOCK_FILE"' EXIT
 
+# Clear any stale LevelDB LOCK files left by a previously crashed CLI process.
+# These live in $VAULT/.livesync/ and cause "IO error: .../LOCK" on next run.
+while IFS= read -r -d '' leveldb_lock; do
+    if command -v lsof &>/dev/null && lsof "$leveldb_lock" 2>/dev/null | grep -q .; then
+        : # genuinely held by a running process — leave it
+    else
+        log "Removing stale LevelDB lock: $leveldb_lock"
+        rm -f "$leveldb_lock"
+    fi
+done < <(find "$VAULT/.livesync" -name "LOCK" -print0 2>/dev/null)
+
 log "Syncing from CouchDB → local PouchDB..."
 $CLI "$VAULT" sync
 

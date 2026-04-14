@@ -54,7 +54,24 @@ info "Initialising obsidian-livesync submodule..."
 git -C "$SCRIPT_DIR" submodule update --init --recursive
 success "Submodule ready."
 
-# ── 3. Build CLI ──────────────────────────────────────────────────────────────
+# ── 3. Apply patches ──────────────────────────────────────────────────────────
+PATCHES_DIR="$SCRIPT_DIR/patches"
+if [ -d "$PATCHES_DIR" ] && compgen -G "$PATCHES_DIR/*.patch" > /dev/null 2>&1; then
+    info "Applying patches to obsidian-livesync..."
+    for patch_file in "$PATCHES_DIR"/*.patch; do
+        patch_name="$(basename "$patch_file")"
+        if git -C "$SCRIPT_DIR/obsidian-livesync" apply --check "$patch_file" 2>/dev/null; then
+            git -C "$SCRIPT_DIR/obsidian-livesync" apply "$patch_file"
+            success "  Applied: $patch_name"
+        elif git -C "$SCRIPT_DIR/obsidian-livesync" apply --reverse --check "$patch_file" 2>/dev/null; then
+            info "  Already applied: $patch_name"
+        else
+            warn "  Could not apply $patch_name cleanly — upstream may have changed. Check patches/ for conflicts."
+        fi
+    done
+fi
+
+# ── 4. Build CLI ──────────────────────────────────────────────────────────────
 if [ -f "$CLI_DIST" ]; then
     info "CLI already built at $CLI_DIST"
 else
@@ -123,7 +140,17 @@ else
         echo "  source .env && node obsidian-livesync/src/apps/cli/dist/index.cjs \\"
         echo "    \"\$LIVESYNC_VAULT_PATH\" setup \"obsidian://setuplivesync?settings=...\""
         echo ""
+        echo -e "${RED}Important:${NC} Do NOT copy settings.json from your phone/tablet."
+        echo "  Use the setup URI — it strips device-specific paths and is portable."
+        echo ""
     fi
+fi
+
+# ── 8. Sanitize settings ──────────────────────────────────────────────────────
+LIVESYNC_SETTINGS="$VAULT_PATH/.livesync/settings.json"
+if [ -f "$LIVESYNC_SETTINGS" ]; then
+    info "Validating settings..."
+    LIVESYNC_VAULT_PATH="$VAULT_PATH" bash "$SCRIPT_DIR/scripts/sanitize-settings.sh" || true
 fi
 
 # ── 8. Done ───────────────────────────────────────────────────────────────────

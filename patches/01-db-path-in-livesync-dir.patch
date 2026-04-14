@@ -1,0 +1,15 @@
+diff --git a/src/apps/cli/services/NodeServiceHub.ts b/src/apps/cli/services/NodeServiceHub.ts
+index 9815f42..d7e153d 100644
+--- a/src/apps/cli/services/NodeServiceHub.ts
++++ b/src/apps/cli/services/NodeServiceHub.ts
+@@ -64,7 +64,9 @@ class NodeDatabaseService<T extends NodeServiceContext> extends DatabaseService<
+     ): { name: string; options: PouchDB.Configuration.DatabaseConfiguration } {
+         const optionPass = {
+             ...options,
+-            prefix: this.context.vaultPath + nodePath.sep,
++            // Store the local PouchDB inside .livesync/ so it is excluded by
++            // the dotfile filter and never accidentally mirrored to CouchDB.
++            prefix: nodePath.join(this.context.vaultPath, ".livesync") + nodePath.sep,
+         };
+         const passSettings = { ...settings, useIndexedDBAdapter: false };
+         return super.modifyDatabaseOptions(passSettings, name, optionPass);
