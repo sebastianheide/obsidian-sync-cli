@@ -74,6 +74,6 @@ else
     done
 fi
 
-log "Syncing local PouchDB → CouchDB..."
-$CLI "$VAULT" sync
+log "Pushing local PouchDB → CouchDB..."
+$CLI "$VAULT" sync-push
 log "Done."

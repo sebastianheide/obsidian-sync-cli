@@ -16,7 +16,7 @@ index b90ad73..cfe66be 100644
 
                  if (entry.isDirectory()) {
 diff --git a/src/apps/cli/commands/runCommand.ts b/src/apps/cli/commands/runCommand.ts
-index 12a315b..1f4232f 100644
+index 12a315b..ac8da59 100644
 --- a/src/apps/cli/commands/runCommand.ts
 +++ b/src/apps/cli/commands/runCommand.ts
 @@ -20,7 +20,7 @@ export async function runCommand(options: CLIOptions, context: CLICommandContext
@@ -28,6 +28,39 @@ index 12a315b..1f4232f 100644
          if (!result) {
              // TODO: Standardise the logic for identifying the cause of replication
              // failure so that every reason (locked DB, version mismatch, network
+@@ -36,6 +36,12 @@ export async function runCommand(options: CLIOptions, context: CLICommandContext
+         return !!result;
+     }
+
++    if (options.command === "sync-push") {
++        console.log("[Command] sync-push");
++        const result = await core.services.replication.replicateAllToRemote(true);
++        return !!result;
++    }
++
+     if (options.command === "p2p-peers") {
+         if (options.commandArgs.length < 1) {
+             throw new Error("p2p-peers requires one argument: <timeout>");
+diff --git a/src/apps/cli/commands/types.ts b/src/apps/cli/commands/types.ts
+index 01ea118..61f53bf 100644
+--- a/src/apps/cli/commands/types.ts
++++ b/src/apps/cli/commands/types.ts
+@@ -4,6 +4,7 @@ import { ServiceContext } from "@lib/services/base/ServiceBase";
+ export type CLICommand =
+     | "daemon"
+     | "sync"
++    | "sync-push"
+     | "p2p-peers"
+     | "p2p-sync"
+     | "p2p-host"
+@@ -39,6 +40,7 @@ export interface CLICommandContext {
+
+ export const VALID_COMMANDS = new Set([
+     "sync",
++    "sync-push",
+     "p2p-peers",
+     "p2p-sync",
+     "p2p-host",
 diff --git a/src/apps/cli/main.ts b/src/apps/cli/main.ts
 index ecd8afa..10c8e68 100644
 --- a/src/apps/cli/main.ts

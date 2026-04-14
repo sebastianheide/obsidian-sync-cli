@@ -153,7 +153,41 @@ if [ -f "$LIVESYNC_SETTINGS" ]; then
     LIVESYNC_VAULT_PATH="$VAULT_PATH" bash "$SCRIPT_DIR/scripts/sanitize-settings.sh" || true
 fi
 
-# ── 8. Done ───────────────────────────────────────────────────────────────────
+# ── 9. Systemd service (Linux only) ──────────────────────────────────────────
+SYSTEMD_UNIT="/etc/systemd/system/livesync-watch.service"
+SYSTEMD_TEMPLATE="$SCRIPT_DIR/systemd/livesync-watch.service"
+
+if [[ "$(uname -s)" == "Linux" ]] && command -v systemctl &>/dev/null; then
+    info "Installing systemd service..."
+
+    # Substitute INSTALL_DIR placeholder with the real path
+    sed "s|INSTALL_DIR|$SCRIPT_DIR|g" "$SYSTEMD_TEMPLATE" > /tmp/livesync-watch.service
+
+    if [ "$EUID" -eq 0 ]; then
+        cp /tmp/livesync-watch.service "$SYSTEMD_UNIT"
+        systemctl daemon-reload
+        systemctl enable livesync-watch.service
+        systemctl restart livesync-watch.service
+        success "livesync-watch.service installed, enabled, and started."
+    elif command -v sudo &>/dev/null; then
+        sudo cp /tmp/livesync-watch.service "$SYSTEMD_UNIT"
+        sudo systemctl daemon-reload
+        sudo systemctl enable livesync-watch.service
+        sudo systemctl restart livesync-watch.service
+        success "livesync-watch.service installed, enabled, and started."
+    else
+        warn "Cannot install systemd unit without root/sudo."
+        warn "Run manually as root:"
+        warn "  sed 's|INSTALL_DIR|$SCRIPT_DIR|g' $SYSTEMD_TEMPLATE > $SYSTEMD_UNIT"
+        warn "  systemctl daemon-reload && systemctl enable --now livesync-watch.service"
+    fi
+else
+    info "Skipping systemd install (not Linux or systemctl not found)."
+    info "To start the watcher manually:"
+    info "  source .env && node $SCRIPT_DIR/scripts/livesync-watch.js"
+fi
+
+# ── 10. Done ──────────────────────────────────────────────────────────────────
 echo ""
 success "Installation complete!"
 echo ""
@@ -162,8 +196,9 @@ echo ""
 echo "  1. Apply your setup URI (if not done above)"
 echo "  2. Run an initial pull to populate the vault:"
 echo "       source .env && ./scripts/livesync-pull.sh"
-echo "  3. Start the background watcher (keeps vault up-to-date):"
-echo "       source .env && node scripts/livesync-watch.js"
-echo "  4. Tell your agent to call livesync-push.sh after writing files."
-echo "     See README.md → Agent Integration for the system-prompt snippet."
+echo "  3. The background watcher is running as a systemd service:"
+echo "       systemctl status livesync-watch.service"
+echo "       journalctl -fu livesync-watch.service"
+echo "  4. Agent writes files → call livesync-push.sh to sync back to CouchDB:"
+echo "       source .env && ./scripts/livesync-push.sh notes/my-note.md"
 echo ""
