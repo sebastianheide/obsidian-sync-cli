@@ -1,15 +1,25 @@
 diff --git a/src/apps/cli/services/NodeServiceHub.ts b/src/apps/cli/services/NodeServiceHub.ts
-index 9815f42..d7e153d 100644
+index 9815f42..c01f01a 100644
 --- a/src/apps/cli/services/NodeServiceHub.ts
 +++ b/src/apps/cli/services/NodeServiceHub.ts
-@@ -64,7 +64,9 @@ class NodeDatabaseService<T extends NodeServiceContext> extends DatabaseService<
+@@ -62,12 +62,18 @@ class NodeDatabaseService<T extends NodeServiceContext> extends DatabaseService<
+         name: string,
+         options: PouchDB.Configuration.DatabaseConfiguration
      ): { name: string; options: PouchDB.Configuration.DatabaseConfiguration } {
++        // Store the local PouchDB inside .livesync/ so it is excluded by
++        // the dotfile filter and never accidentally mirrored to CouchDB.
          const optionPass = {
              ...options,
 -            prefix: this.context.vaultPath + nodePath.sep,
-+            // Store the local PouchDB inside .livesync/ so it is excluded by
-+            // the dotfile filter and never accidentally mirrored to CouchDB.
 +            prefix: nodePath.join(this.context.vaultPath, ".livesync") + nodePath.sep,
          };
          const passSettings = { ...settings, useIndexedDBAdapter: false };
-         return super.modifyDatabaseOptions(passSettings, name, optionPass);
+-        return super.modifyDatabaseOptions(passSettings, name, optionPass);
++        // Sanitize the db name: path separators in additionalSuffixOfDatabaseName
++        // (e.g. imported from an Android settings.json) would make LevelDB look
++        // for subdirectories that do not exist → "IO error: .../LOCK".
++        const safeName = name.replace(/[/\\]/g, "-");
++        return super.modifyDatabaseOptions(passSettings, safeName, optionPass);
+     }
+ }
+ class NodeUIService<T extends ServiceContext> extends UIService<T> {

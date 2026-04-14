@@ -109,7 +109,17 @@ if [ -n "$COUCH_URI" ] && [ "$IS_CONFIGURED" = "true" ]; then
     esac
 fi
 
-# ── 5. Stale LevelDB LOCK files ───────────────────────────────────────────────
+# ── 5. additionalSuffixOfDatabaseName with path separators ───────────────────
+SUFFIX_DB="$(read_setting additionalSuffixOfDatabaseName)"
+if echo "$SUFFIX_DB" | grep -q '[/\\]'; then
+    warn "additionalSuffixOfDatabaseName contains path separators: \"$SUFFIX_DB\""
+    warn "This causes LevelDB to look for non-existent subdirectories → \"IO error: .../LOCK\"."
+    warn "Likely copied from Android device. Resetting to \"headless-app\"..."
+    write_setting additionalSuffixOfDatabaseName '"headless-app"'
+    ok "  Patched: additionalSuffixOfDatabaseName → \"headless-app\""
+fi
+
+# ── 6. Stale LevelDB LOCK files ───────────────────────────────────────────────
 LIVESYNC_DIR="$VAULT/.livesync"
 STALE_LOCKS=()
 while IFS= read -r -d '' lockfile; do
