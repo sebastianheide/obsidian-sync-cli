@@ -1,0 +1,26 @@
+[Unit]
+Description=Obsidian LiveSync vault file watcher (auto-push on write)
+Documentation=https://github.com/sebastianheide/obsidian-sync-cli
+After=network-online.target livesync-watch.service
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# ── populated by install.sh ──────────────────────────────────────
+EnvironmentFile=INSTALL_DIR/.env
+# ── working directory ────────────────────────────────────────────
+WorkingDirectory=INSTALL_DIR
+# ── run the file watcher ─────────────────────────────────────────
+ExecStart=/usr/bin/env node INSTALL_DIR/scripts/livesync-file-watcher.js
+# ── restart policy ───────────────────────────────────────────────
+Restart=on-failure
+RestartSec=10
+# ── logging ──────────────────────────────────────────────────────
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=livesync-file-watcher
+
+[Install]
+WantedBy=multi-user.target

@@ -9,20 +9,21 @@ Built on the [Self-hosted LiveSync](https://github.com/vrtmrz/obsidian-livesync)
 ## How it works
 
 ```
-┌──────────────────────┐     ┌──────────────┐     ┌──────────────────────┐
-│  Phone / Computer    │     │   CouchDB    │     │  Host (this repo)    │
-│  Obsidian + plugin   │◄───►│   server     │◄───►│  livesync-watch.js   │
-└──────────────────────┘     └──────────────┘     │  ┌────────────────┐  │
-                                                   │  │ vault/         │  │
-                                                   │  │   note.md      │◄─┼─► AI agent
-                                                   │  │   .livesync/   │  │
-                                                   │  └────────────────┘  │
-                                                   └──────────────────────┘
+┌──────────────────────┐     ┌──────────────┐     ┌────────────────────────────┐
+│  Phone / Computer    │     │   CouchDB    │     │  Host (this repo)          │
+│  Obsidian + plugin   │◄───►│   server     │◄───►│  livesync-watch.js         │
+└──────────────────────┘     └──────────────┘     │  livesync-file-watcher.js  │
+                                                   │  ┌──────────────────────┐  │
+                                                   │  │ vault/               │  │
+                                                   │  │   note.md      ◄─────┼──┼─► AI agent reads
+                                                   │  │   .livesync/   ──────┼──┼─► AI agent writes
+                                                   │  └──────────────────────┘  │
+                                                   └────────────────────────────┘
 ```
 
 **Inbound** (remote → host): `livesync-watch.js` long-polls the CouchDB `_changes` feed. When your phone saves a note, the watcher detects the change within seconds and runs `livesync-pull.sh`, which syncs the local PouchDB then materialises files to disk. The agent always reads fresh files — no polling needed.
 
-**Outbound** (host → remote): The agent writes files to disk normally, then calls `scripts/livesync-push.sh`. The script stores the changes in the local PouchDB and pushes them to CouchDB. All devices pick up the change within seconds.
+**Outbound** (host → remote): `livesync-file-watcher.js` watches the vault directory with inotify. When the agent writes a file, the watcher debounces and calls `livesync-push.sh` automatically. The agent just writes files — no extra commands needed.
 
 ---
 
@@ -106,29 +107,42 @@ source .env
 ./scripts/livesync-pull.sh
 ```
 
-### Start the background watcher
+### Start the background watchers
 
-Keeps the vault up-to-date as your other devices save notes:
+Two watchers run as systemd services (installed automatically by `install.sh` on Linux):
+
+| Service | Direction | What it does |
+|---------|-----------|--------------|
+| `livesync-watch.service` | inbound | Polls CouchDB `_changes` → runs pull on remote changes |
+| `livesync-file-watcher.service` | outbound | Watches vault files → pushes edits to CouchDB |
+
+```bash
+# Check status
+systemctl status livesync-watch livesync-file-watcher
+
+# Tail logs
+journalctl -fu livesync-watch
+journalctl -fu livesync-file-watcher
+```
+
+To run manually (outside systemd):
 
 ```bash
 source .env
-node scripts/livesync-watch.js
+node scripts/livesync-watch.js &
+node scripts/livesync-file-watcher.js &
 ```
 
-The watcher runs until killed. Logs go to stderr. Stop with `Ctrl-C` or `SIGTERM`.
+### Push after writing (manual)
 
-Run it as a persistent service — see [Running as a service](#running-as-a-service) below.
-
-### Push after writing
-
-After the agent (or any script) writes or renames a file:
+The file watcher handles this automatically. If you need to push manually (e.g. after a bulk operation from outside the vault):
 
 ```bash
-# Push specific files (fastest)
+# Push specific files
 source .env
 ./scripts/livesync-push.sh notes/my-note.md projects/plan.md
 
-# Or push all changed files (mtime diff — useful after bulk operations)
+# Push all changed files (mtime diff)
 ./scripts/livesync-push.sh
 ```
 
@@ -168,28 +182,40 @@ $CLI "$LIVESYNC_VAULT_PATH" resolve notes/my-note.md 3-abc  # keep the rev you w
 
 ## Agent integration
 
-The agent reads files directly from the filesystem — no special command needed. The watcher keeps them fresh.
+The agent reads and writes vault files directly — **no sync commands needed**. Two background services handle everything automatically:
 
-The only thing the agent must do after writing is call `livesync-push.sh`. Add this to your agent's system prompt or `CLAUDE.md`:
+- **Inbound**: `livesync-watch.service` keeps vault files fresh when your phone or computer saves a note.
+- **Outbound**: `livesync-file-watcher.service` detects any file the agent writes and pushes it to CouchDB within ~2 seconds.
+
+Add this to your agent's system prompt or `CLAUDE.md`:
 
 ```
-## Obsidian vault sync
+## Obsidian vault
 
-Your Obsidian vault is at: $LIVESYNC_VAULT_PATH
-The sync tooling lives at: /path/to/obsidian-agent-sync
+Your Obsidian vault is at: /path/to/vault
 
-Rules:
-- Read notes by reading files directly from the vault directory.
-- After writing or renaming any note, run:
-    source /path/to/obsidian-agent-sync/.env
-    /path/to/obsidian-agent-sync/scripts/livesync-push.sh <vault-relative-path>
-  Example: livesync-push.sh notes/meeting-2024-01-15.md
-- To delete a note, delete the file first, then run:
-    livesync-push.sh --delete <vault-relative-path>
-- To push all pending changes at once:
-    livesync-push.sh   (no arguments)
-- The background watcher (livesync-watch.js) keeps the vault up-to-date
-  automatically. You do not need to pull manually.
+- Read notes by reading .md files directly from the vault directory.
+- Write notes by writing .md files directly to the vault directory.
+- Delete notes by deleting the file — the sync daemon handles propagation.
+- The vault is kept in sync with CouchDB automatically. No sync commands needed.
+- Do NOT write to .livesync/ — that directory is internal to the sync engine.
+```
+
+### Manual push (advanced / edge cases)
+
+The file watcher covers normal edits. For edge cases (bulk renames, moves from outside the vault, deletions):
+
+```bash
+source /path/to/obsidian-agent-sync/.env
+
+# Push a specific file
+./scripts/livesync-push.sh notes/my-note.md
+
+# Push all files changed since last sync (mtime comparison)
+./scripts/livesync-push.sh
+
+# Mark a file deleted in CouchDB (after rm)
+./scripts/livesync-push.sh --delete notes/old-note.md
 ```
 
 ---
@@ -198,31 +224,22 @@ Rules:
 
 ### systemd (Linux)
 
-Create `/etc/systemd/system/livesync-watch.service`:
-
-```ini
-[Unit]
-Description=Obsidian LiveSync watcher
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=YOUR_USER
-WorkingDirectory=/path/to/obsidian-agent-sync
-EnvironmentFile=/path/to/obsidian-agent-sync/.env
-ExecStart=/usr/bin/node /path/to/obsidian-agent-sync/scripts/livesync-watch.js
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
+`install.sh` does this automatically. To do it manually:
 
 ```bash
+INSTALL_DIR=/path/to/obsidian-agent-sync
+
+for svc in livesync-watch livesync-file-watcher; do
+    sed "s|INSTALL_DIR|$INSTALL_DIR|g" "$INSTALL_DIR/systemd/${svc}.service" \
+        | sudo tee /etc/systemd/system/${svc}.service > /dev/null
+done
+
 sudo systemctl daemon-reload
-sudo systemctl enable --now livesync-watch
-sudo journalctl -u livesync-watch -f   # tail logs
+sudo systemctl enable --now livesync-watch livesync-file-watcher
+
+# Tail logs
+sudo journalctl -fu livesync-watch
+sudo journalctl -fu livesync-file-watcher
 ```
 
 ### launchd (macOS)
@@ -345,16 +362,20 @@ $CLI "$LIVESYNC_VAULT_PATH" resolve notes/conflicted.md <rev-to-keep>
 ```
 obsidian-agent-sync/
 ├── scripts/
-│   ├── livesync-pull.sh       inbound sync (CouchDB → files)
-│   ├── livesync-push.sh       outbound sync (files → CouchDB)
-│   ├── livesync-watch.js      background watcher daemon
-│   └── sanitize-settings.sh   validate/fix settings.json
+│   ├── livesync-pull.sh           inbound sync (CouchDB → PouchDB → files)
+│   ├── livesync-push.sh           outbound sync (files → PouchDB → CouchDB)
+│   ├── livesync-watch.js          CouchDB _changes daemon (triggers pull)
+│   ├── livesync-file-watcher.js   vault inotify daemon (triggers push)
+│   └── sanitize-settings.sh       validate/fix settings.json
+├── systemd/
+│   ├── livesync-watch.service         systemd unit for livesync-watch.js
+│   └── livesync-file-watcher.service  systemd unit for livesync-file-watcher.js
 ├── patches/
-│   └── 01-db-path-in-livesync-dir.patch   moves local PouchDB into .livesync/
+│   └── 01-db-path-in-livesync-dir.patch   upstream fixes (applied by install.sh)
 ├── obsidian-livesync/         upstream plugin repo (git submodule)
 │   └── src/apps/cli/dist/     built CLI (generated by install.sh)
-├── install.sh                 one-shot setup (init, patch, build, .env)
-├── .env.example               environment variable template
+├── install.sh                 one-shot setup (init, patch, build, .env, systemd)
+├── package.json               outer deps (chokidar for file watcher)
 └── README.md
 ```
 

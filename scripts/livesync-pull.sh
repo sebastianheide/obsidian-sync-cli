@@ -26,7 +26,19 @@ if [ -f "$LOCK_FILE" ]; then
 fi
 
 echo "$$" > "$LOCK_FILE"
-trap 'rm -f "$LOCK_FILE"' EXIT
+
+# Suppress flag: tells livesync-file-watcher.js to ignore changes written by
+# this pull. Kept alive for 3 s after mirror finishes (chokidar's
+# awaitWriteFinish stabilityThreshold is 500 ms, so 3 s is comfortably safe).
+SUPPRESS_FILE="$VAULT/.livesync/push-suppressed"
+mkdir -p "$(dirname "$SUPPRESS_FILE")"
+
+cleanup() {
+    sleep 3
+    rm -f "$SUPPRESS_FILE"
+    rm -f "$LOCK_FILE"
+}
+trap cleanup EXIT
 
 # Clear any stale LevelDB LOCK files left by a previously crashed CLI process.
 # These live in $VAULT/.livesync/ and cause "IO error: .../LOCK" on next run.
@@ -43,6 +55,7 @@ log "Syncing from CouchDB → local PouchDB..."
 $CLI "$VAULT" sync
 
 log "Materializing local PouchDB → filesystem..."
+touch "$SUPPRESS_FILE"
 $CLI "$VAULT" mirror
 
 log "Done."

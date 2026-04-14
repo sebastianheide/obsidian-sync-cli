@@ -5,7 +5,11 @@
   "scripts": {
     "install:cli": "cd obsidian-livesync && npm install && cd src/apps/cli && npm run build",
     "watch": "node scripts/livesync-watch.js",
+    "file-watch": "node scripts/livesync-file-watcher.js",
     "pull": "bash scripts/livesync-pull.sh",
     "push": "bash scripts/livesync-push.sh"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3"
   }
 }

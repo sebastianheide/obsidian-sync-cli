@@ -71,7 +71,10 @@ if [ -d "$PATCHES_DIR" ] && compgen -G "$PATCHES_DIR/*.patch" > /dev/null 2>&1; 
     done
 fi
 
-# ── 4. Build CLI ──────────────────────────────────────────────────────────────
+# ── 4. Dependencies & build CLI ───────────────────────────────────────────────
+info "Installing watcher dependencies (chokidar)..."
+npm install --prefix "$SCRIPT_DIR" --silent
+
 if [ -f "$CLI_DIST" ]; then
     info "CLI already built at $CLI_DIST"
 else
@@ -153,38 +156,43 @@ if [ -f "$LIVESYNC_SETTINGS" ]; then
     LIVESYNC_VAULT_PATH="$VAULT_PATH" bash "$SCRIPT_DIR/scripts/sanitize-settings.sh" || true
 fi
 
-# ── 9. Systemd service (Linux only) ──────────────────────────────────────────
-SYSTEMD_UNIT="/etc/systemd/system/livesync-watch.service"
-SYSTEMD_TEMPLATE="$SCRIPT_DIR/systemd/livesync-watch.service"
+# ── 9. Systemd services (Linux only) ─────────────────────────────────────────
+install_systemd_service() {
+    local name="$1"
+    local template="$SCRIPT_DIR/systemd/${name}.service"
+    local unit="/etc/systemd/system/${name}.service"
+    local tmp="/tmp/${name}.service"
 
-if [[ "$(uname -s)" == "Linux" ]] && command -v systemctl &>/dev/null; then
-    info "Installing systemd service..."
-
-    # Substitute INSTALL_DIR placeholder with the real path
-    sed "s|INSTALL_DIR|$SCRIPT_DIR|g" "$SYSTEMD_TEMPLATE" > /tmp/livesync-watch.service
+    sed "s|INSTALL_DIR|$SCRIPT_DIR|g" "$template" > "$tmp"
 
     if [ "$EUID" -eq 0 ]; then
-        cp /tmp/livesync-watch.service "$SYSTEMD_UNIT"
+        cp "$tmp" "$unit"
         systemctl daemon-reload
-        systemctl enable livesync-watch.service
-        systemctl restart livesync-watch.service
-        success "livesync-watch.service installed, enabled, and started."
+        systemctl enable "${name}.service"
+        systemctl restart "${name}.service"
+        success "  ${name}.service installed, enabled, and started."
     elif command -v sudo &>/dev/null; then
-        sudo cp /tmp/livesync-watch.service "$SYSTEMD_UNIT"
+        sudo cp "$tmp" "$unit"
         sudo systemctl daemon-reload
-        sudo systemctl enable livesync-watch.service
-        sudo systemctl restart livesync-watch.service
-        success "livesync-watch.service installed, enabled, and started."
+        sudo systemctl enable "${name}.service"
+        sudo systemctl restart "${name}.service"
+        success "  ${name}.service installed, enabled, and started."
     else
-        warn "Cannot install systemd unit without root/sudo."
-        warn "Run manually as root:"
-        warn "  sed 's|INSTALL_DIR|$SCRIPT_DIR|g' $SYSTEMD_TEMPLATE > $SYSTEMD_UNIT"
-        warn "  systemctl daemon-reload && systemctl enable --now livesync-watch.service"
+        warn "  Cannot install ${name}.service without root/sudo. Run manually:"
+        warn "  sed 's|INSTALL_DIR|$SCRIPT_DIR|g' $template > $unit"
+        warn "  systemctl daemon-reload && systemctl enable --now ${name}.service"
     fi
+}
+
+if [[ "$(uname -s)" == "Linux" ]] && command -v systemctl &>/dev/null; then
+    info "Installing systemd services..."
+    install_systemd_service "livesync-watch"
+    install_systemd_service "livesync-file-watcher"
 else
     info "Skipping systemd install (not Linux or systemctl not found)."
-    info "To start the watcher manually:"
-    info "  source .env && node $SCRIPT_DIR/scripts/livesync-watch.js"
+    info "To start the watchers manually:"
+    info "  source .env && node $SCRIPT_DIR/scripts/livesync-watch.js &"
+    info "  source .env && node $SCRIPT_DIR/scripts/livesync-file-watcher.js &"
 fi
 
 # ── 10. Done ──────────────────────────────────────────────────────────────────
@@ -196,9 +204,13 @@ echo ""
 echo "  1. Apply your setup URI (if not done above)"
 echo "  2. Run an initial pull to populate the vault:"
 echo "       source .env && ./scripts/livesync-pull.sh"
-echo "  3. The background watcher is running as a systemd service:"
-echo "       systemctl status livesync-watch.service"
-echo "       journalctl -fu livesync-watch.service"
-echo "  4. Agent writes files → call livesync-push.sh to sync back to CouchDB:"
+echo "  3. Two background services are running:"
+echo "       livesync-watch        — CouchDB changes → vault files (inbound)"
+echo "       livesync-file-watcher — vault file edits → CouchDB (outbound, automatic)"
+echo "       systemctl status livesync-watch livesync-file-watcher"
+echo "       journalctl -fu livesync-watch"
+echo "       journalctl -fu livesync-file-watcher"
+echo "  4. Agent just writes files normally — push is automatic."
+echo "     Manual push is still available if needed:"
 echo "       source .env && ./scripts/livesync-push.sh notes/my-note.md"
 echo ""
