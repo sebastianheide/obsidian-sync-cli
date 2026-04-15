@@ -19,6 +19,24 @@ VAULT="${LIVESYNC_VAULT_PATH:?Error: LIVESYNC_VAULT_PATH is not set}"
 
 log() { echo "[livesync-push] $(date -Iseconds) $*" >&2; }
 
+# Clear stale LevelDB LOCK files left by a crashed CLI process.
+# Each CLI invocation opens LevelDB exclusively; if a previous process did not
+# release the OS flock the LOCK file remains and the next run fails with
+# "cannot be initialised".  The OS releases the flock on process exit even if
+# the file is not deleted, so it is safe to remove any LOCK not held by a
+# currently-running process.
+clear_stale_leveldb_locks() {
+    while IFS= read -r -d '' leveldb_lock; do
+        if command -v lsof &>/dev/null && lsof "$leveldb_lock" 2>/dev/null | grep -q .; then
+            : # genuinely held — leave it
+        else
+            log "Removing stale LevelDB lock: $leveldb_lock"
+            rm -f "$leveldb_lock"
+        fi
+    done < <(find "$VAULT/.livesync" -name "LOCK" -print0 2>/dev/null)
+}
+clear_stale_leveldb_locks
+
 # Convert a path to vault-relative (strips VAULT prefix if absolute)
 to_vault_rel() {
     local p="$1"
