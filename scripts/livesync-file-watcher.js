@@ -117,15 +117,16 @@ function drainQueue() {
 // ── Watcher ───────────────────────────────────────────────────────────────────
 
 const watcher = chokidar.watch(VAULT, {
-    // ignore all dot-prefixed files and directories (.livesync/, .git/, etc.)
-    // and common editor temp files
-    ignored: [
-        /(^|[/\\])\../,
-        /~$/,
-        /\.tmp$/,
-        /\.swp$/,
-        /\.swx$/,
-    ],
+    // Ignore dot-prefixed entries and editor temp files using a function so
+    // that only vault-relative path components are checked.  A regex against
+    // the full absolute path would also match dot-dirs in the *parent* of the
+    // vault (e.g. /home/user/.openclaw/…) and silently ignore everything.
+    ignored: (absPath) => {
+        const rel = path.relative(VAULT, absPath);
+        if (rel === "") return false; // never ignore the vault root itself
+        return rel.split(path.sep).some((p) => p.startsWith(".")) ||
+            /[~]$|\.tmp$|\.swp$|\.swx$/.test(path.basename(absPath));
+    },
     persistent: true,
     ignoreInitial: true,
     // wait for writes to finish before firing (handles atomic rename writes)
