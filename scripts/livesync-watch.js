@@ -49,6 +49,49 @@ function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
 }
 
+// ── LevelDB LOCK cleanup ──────────────────────────────────────────────────────
+
+/**
+ * Remove stale LevelDB LOCK files left by a previously crashed CLI process.
+ * Each CLI invocation opens LevelDB exclusively; if the previous process didn't
+ * release the OS flock (e.g. was killed), the LOCK file remains and the next
+ * invocation fails with "cannot be initialised".
+ *
+ * We check with lsof whether the lock is genuinely held before removing it.
+ */
+function clearStaleLevelDBLocks() {
+    const livesyncDir = path.join(VAULT, ".livesync");
+    if (!fs.existsSync(livesyncDir)) return;
+    let entries;
+    try {
+        entries = fs.readdirSync(livesyncDir);
+    } catch {
+        return;
+    }
+    for (const entry of entries) {
+        const lockPath = path.join(livesyncDir, entry, "LOCK");
+        if (!fs.existsSync(lockPath)) continue;
+        try {
+            // If lsof is available, only remove if no process holds the lock.
+            // If lsof is unavailable, remove unconditionally (safe: OS flock
+            // is released on process exit even if the file remains).
+            let held = false;
+            try {
+                const out = execFileSync("lsof", [lockPath], { stdio: ["ignore", "pipe", "pipe"] }).toString();
+                held = out.trim().length > 0;
+            } catch {
+                // lsof not available or returned non-zero (no process holds it)
+            }
+            if (!held) {
+                fs.unlinkSync(lockPath);
+                log(`Removed stale LevelDB lock: ${lockPath}`);
+            }
+        } catch {
+            // ignore removal errors
+        }
+    }
+}
+
 // ── Connection info ───────────────────────────────────────────────────────────
 
 /**
@@ -58,6 +101,7 @@ function sleep(ms) {
  */
 function resolveConnectionInfo() {
     log("Resolving CouchDB connection via CLI...");
+    clearStaleLevelDBLocks();
     let stdout;
     try {
         stdout = execFileSync("node", [CLI, VAULT, "connection-info"], {
