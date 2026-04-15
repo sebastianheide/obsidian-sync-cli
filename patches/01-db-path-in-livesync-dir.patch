@@ -16,7 +16,7 @@ index b90ad73..cfe66be 100644
  
                  if (entry.isDirectory()) {
 diff --git a/src/apps/cli/commands/runCommand.ts b/src/apps/cli/commands/runCommand.ts
-index 12a315b..bd35efa 100644
+index 12a315b..640022c 100644
 --- a/src/apps/cli/commands/runCommand.ts
 +++ b/src/apps/cli/commands/runCommand.ts
 @@ -20,7 +20,7 @@ export async function runCommand(options: CLIOptions, context: CLICommandContext
@@ -48,7 +48,7 @@ index 12a315b..bd35efa 100644
 +
 +    if (options.command === "sync-push") {
 +        console.log("[Command] sync-push");
-+        const result = await core.services.replication.replicateAllToRemote(true);
++        const result = await core.services.replication.replicateAllToRemote(true, true);
 +        return !!result;
 +    }
 +
