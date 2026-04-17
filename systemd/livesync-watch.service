@@ -16,7 +16,7 @@ WorkingDirectory=INSTALL_DIR
 # ── run the watcher ──────────────────────────────────────────────
 ExecStart=/usr/bin/env node INSTALL_DIR/scripts/livesync-watch.js
 # ── restart policy ───────────────────────────────────────────────
-Restart=on-failure
+Restart=always
 RestartSec=10
 # ── logging ──────────────────────────────────────────────────────
 StandardOutput=journal
